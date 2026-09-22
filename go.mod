@@ -1,4 +1,4 @@
-module github.com/nodexa-os/nodexa-cli
+module github.com/adhuldas/nodexa-cli
 
 go 1.23
 
