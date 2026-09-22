@@ -150,6 +150,36 @@ func Push(imageRef string) (string, error) {
 	return digest, nil
 }
 
+// PullTagPush pulls an existing image from an external registry, tags it for
+// the target release repository, and pushes it to the Nodexa registry, returning the digest.
+func PullTagPush(sourceImage, targetRef, platform string) (string, error) {
+	var pullArgs []string
+	if platform != "" {
+		fmt.Printf("  → pulling %s (platform=%s)\n", sourceImage, platform)
+		pullArgs = []string{"pull", "--platform", platform, sourceImage}
+	} else {
+		fmt.Printf("  → pulling %s\n", sourceImage)
+		pullArgs = []string{"pull", sourceImage}
+	}
+
+	pullCmd := exec.Command("docker", pullArgs...)
+	pullCmd.Stdout = os.Stdout
+	pullCmd.Stderr = os.Stderr
+	if err := pullCmd.Run(); err != nil {
+		return "", fmt.Errorf("docker pull failed for %s: %w", sourceImage, err)
+	}
+
+	fmt.Printf("  → tagging %s → %s\n", sourceImage, targetRef)
+	tagCmd := exec.Command("docker", "tag", sourceImage, targetRef)
+	tagCmd.Stdout = os.Stdout
+	tagCmd.Stderr = os.Stderr
+	if err := tagCmd.Run(); err != nil {
+		return "", fmt.Errorf("docker tag failed from %s to %s: %w", sourceImage, targetRef, err)
+	}
+
+	return Push(targetRef)
+}
+
 // Login runs `docker login` with the given credentials via --password-stdin.
 func Login(registry, username, password string) error {
 	cmd := exec.Command("docker", "login", registry, "-u", username, "--password-stdin")

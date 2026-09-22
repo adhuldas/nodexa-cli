@@ -15,16 +15,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Service describes a single container image to build within a release.
+// Service describes a single container image to build or pull within a release.
 type Service struct {
 	// Name is the service name (e.g. "web", "worker", "backend"), matching
 	// nodexa-backend's ServiceSpec.name.
 	Name string `yaml:"name"`
 	// Dockerfile is the path to the Dockerfile, relative to the
 	// context or working directory (default: "Dockerfile").
-	Dockerfile string `yaml:"dockerfile"`
+	Dockerfile string `yaml:"dockerfile,omitempty"`
 	// Context is the Docker build context directory (default: ".").
-	Context string `yaml:"context"`
+	Context string `yaml:"context,omitempty"`
+	// Image is an existing pre-built container image reference (e.g. "ghcr.io/org/repo:tag").
+	// When specified without a build block, nodex pulls, tags, and pushes this image
+	// without rebuilding from a Dockerfile.
+	Image string `yaml:"image,omitempty"`
 	// Platform is the target platform for the container image (e.g. "linux/arm/v7", "linux/arm64").
 	Platform string `yaml:"platform,omitempty"`
 }
@@ -80,11 +84,13 @@ func Load(path string) (*Manifest, error) {
 		if m.Services[i].Name == "" {
 			return nil, fmt.Errorf("manifest %s: service[%d].name is required", path, i)
 		}
-		if m.Services[i].Dockerfile == "" {
-			m.Services[i].Dockerfile = "Dockerfile"
-		}
-		if m.Services[i].Context == "" {
-			m.Services[i].Context = "."
+		if m.Services[i].Image == "" {
+			if m.Services[i].Dockerfile == "" {
+				m.Services[i].Dockerfile = "Dockerfile"
+			}
+			if m.Services[i].Context == "" {
+				m.Services[i].Context = "."
+			}
 		}
 		if m.Services[i].Platform == "" && m.Platform != "" {
 			m.Services[i].Platform = m.Platform
@@ -144,6 +150,7 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 
 		var buildNode *yaml.Node
 		var svcPlatform string
+		var svcImage string
 		if svcVal.Kind == yaml.MappingNode {
 			for j := 0; j < len(svcVal.Content)-1; j += 2 {
 				key := svcVal.Content[j].Value
@@ -151,6 +158,8 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 					buildNode = svcVal.Content[j+1]
 				} else if key == "platform" {
 					svcPlatform = svcVal.Content[j+1].Value
+				} else if key == "image" {
+					svcImage = svcVal.Content[j+1].Value
 				}
 			}
 		}
@@ -184,6 +193,13 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 			}
 
 			services = append(services, svc)
+		} else if svcImage != "" {
+			// Service has an existing pre-built image reference
+			services = append(services, Service{
+				Name:     svcName,
+				Image:    svcImage,
+				Platform: svcPlatform,
+			})
 		} else {
 			// Check if a subdirectory matching service name has a Dockerfile
 			subDirDocker := filepath.Join(workingDir, svcName, "Dockerfile")

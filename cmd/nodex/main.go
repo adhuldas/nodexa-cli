@@ -16,15 +16,17 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/adhuldas/nodexa-cli/internal/build"
 	"github.com/adhuldas/nodexa-cli/internal/client"
 	"github.com/adhuldas/nodexa-cli/internal/manifest"
+	"github.com/adhuldas/nodexa-cli/internal/registry"
 	"github.com/spf13/cobra"
 )
 
-var Version = "0.1.6"
+var Version = "0.1.7"
 
 const (
 	DefaultRegistryHost = "nodexa.elzora.tech"
@@ -60,6 +62,7 @@ func newPushCmd() *cobra.Command {
 		registryURL  string
 		apiToken     string
 		platform     string
+		registryFile string
 	)
 
 	cmd := &cobra.Command{
@@ -70,6 +73,7 @@ and completes the release. Automatically detects Dockerfile or compose files
 in your repository, or reads a nodexa.yml manifest.`,
 		Example: `  nodex push --fleet-id 6aa7090a7f1a3400237fa78c --token <api-token>
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c --platform linux/arm/v7
+  nodex push --fleet-id 6aa7090a7f1a3400237fa78c -r registry.yml
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c --service backend
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c -c docker-compose.yml
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c -f custom-nodexa.yml`,
@@ -84,7 +88,7 @@ in your repository, or reads a nodexa.yml manifest.`,
 				Dockerfile:   dockerfile,
 				Context:      contextDir,
 				Platform:     platform,
-			}, fleetID, registryHost, registryURL, apiToken)
+			}, fleetID, registryHost, registryURL, apiToken, registryFile)
 		},
 	}
 
@@ -94,6 +98,7 @@ in your repository, or reads a nodexa.yml manifest.`,
 	cmd.Flags().StringVar(&dockerfile, "dockerfile", "", "Path to Dockerfile (defaults to Dockerfile in current directory)")
 	cmd.Flags().StringVar(&contextDir, "context", "", "Docker build context directory (defaults to .)")
 	cmd.Flags().StringVarP(&platform, "platform", "p", envOrDefault("NODEXA_PLATFORM", ""), "Target platform for container build (e.g. linux/arm/v7, linux/arm64, linux/amd64)")
+	cmd.Flags().StringVarP(&registryFile, "registry-file", "r", "", "Path to registry.yml credentials file (auto-detected if present)")
 	cmd.Flags().StringVar(&fleetID, "fleet-id", envOrDefault("NODEXA_FLEET_ID", ""), "Fleet ID to push to (required)")
 	cmd.Flags().StringVar(&apiToken, "token", envOrDefault("NODEXA_API_TOKEN", ""), "API token for authentication (required)")
 
@@ -109,7 +114,28 @@ in your repository, or reads a nodexa.yml manifest.`,
 	return cmd
 }
 
-func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, apiToken string) error {
+func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, apiToken, registryFile string) error {
+	// 0. Load external registry credentials if present (registry.yml / --registry-file).
+	regFilePath, err := registry.FindFile(opts.WorkingDir, registryFile)
+	if err != nil {
+		return err
+	}
+	if regFilePath != "" {
+		creds, err := registry.LoadCredentials(regFilePath)
+		if err != nil {
+			return fmt.Errorf("loading registry credentials from %s: %w", regFilePath, err)
+		}
+		if len(creds) > 0 {
+			fmt.Printf("📋 Reading external registry credentials: %s\n", filepath.Base(regFilePath))
+			for _, cred := range creds {
+				fmt.Printf("🔑 Logging into external registry %s (user: %s)...\n", cred.Registry, cred.Username)
+				if err := build.Login(cred.Registry, cred.Username, cred.Password); err != nil {
+					return fmt.Errorf("login to external registry %s failed: %w", cred.Registry, err)
+				}
+			}
+		}
+	}
+
 	// 1. Resolve manifest (explicit file, default nodexa.yml/yaml, or auto-detected).
 	m, desc, err := manifest.DetectOrLoad(opts)
 	if err != nil {
@@ -138,7 +164,7 @@ func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, ap
 		imageRefs[s.Name] = s.ImageRef
 	}
 
-	// 3. Docker login.
+	// 3. Docker login to Nodexa registry.
 	fmt.Printf("\n🔑 Logging into registry %s...\n", registryHost)
 	if err := build.Login(registryHost, "nodex", apiToken); err != nil {
 		_ = failRelease(c, fleetID, release.Revision)
@@ -156,7 +182,15 @@ func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, ap
 		}
 
 		var digest string
-		if strings.Contains(svc.Platform, ",") {
+		if svc.Image != "" {
+			// Pre-built image: pull from source registry, tag with Nodexa ref, and push to Nodexa
+			d, err := build.PullTagPush(svc.Image, ref, svc.Platform)
+			if err != nil {
+				_ = failRelease(c, fleetID, release.Revision)
+				return err
+			}
+			digest = d
+		} else if strings.Contains(svc.Platform, ",") {
 			// Multi-platform build directly builds and pushes manifest list to registry
 			d, err := build.BuildxPush(ref, svc.Dockerfile, svc.Context, svc.Platform)
 			if err != nil {

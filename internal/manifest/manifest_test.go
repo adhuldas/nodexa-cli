@@ -185,7 +185,7 @@ services:
 	if len(m.Services) != 1 || m.Services[0].Name != "backend" {
 		t.Fatalf("expected backend service inferred from docker-compose.yml, got %+v", m.Services)
 	}
-	if m.Services[0].Dockerfile != "Dockerfile" || m.Services[0].Context != "." {
+	if m.Services[0].Image != "ghcr.io/adhuldas/iot_backend_service:latest" {
 		t.Fatalf("unexpected service config: %+v", m.Services[0])
 	}
 	if desc != "compose file: docker-compose.yml" {
@@ -409,8 +409,8 @@ services:
 	if len(m.Services) != 2 {
 		t.Fatalf("expected 2 services, got %d: %+v", len(m.Services), m.Services)
 	}
-	if m.Services[0].Name != "smart-printer-firmware" || m.Services[0].Context != "." {
-		t.Fatalf("expected smart-printer-firmware as first service with context ., got %+v", m.Services[0])
+	if m.Services[0].Name != "smart-printer-firmware" || m.Services[0].Image != "ghcr.io/adhuldas/smart-printer-firmware:latest" {
+		t.Fatalf("expected smart-printer-firmware with pre-built image, got %+v", m.Services[0])
 	}
 	if m.Services[1].Name != "nginx" || m.Services[1].Context != "./nginx" {
 		t.Fatalf("expected nginx as second service with context ./nginx, got %+v", m.Services[1])
