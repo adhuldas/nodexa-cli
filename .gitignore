@@ -32,4 +32,4 @@ go.work.sum
 # .vscode/
 
 # Built binary
-nodex
+/nodex
