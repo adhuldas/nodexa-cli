@@ -372,3 +372,49 @@ services:
 	}
 }
 
+func TestDetectOrLoad_ComposeWithMixedBuildAndRootDockerfile(t *testing.T) {
+	// Root dir named "smart-printer-firmware"
+	parent := t.TempDir()
+	appDir := filepath.Join(parent, "smart-printer-firmware")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	composeContent := `
+services:
+  smart-printer-firmware:
+    image: ghcr.io/adhuldas/smart-printer-firmware:latest
+  nginx:
+    build: ./nginx
+`
+	if err := os.WriteFile(filepath.Join(appDir, "docker-compose.yml"), []byte(composeContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "Dockerfile"), []byte("FROM python:alpine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(appDir, "nginx"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "nginx", "Dockerfile"), []byte("FROM nginx:alpine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, _, err := DetectOrLoad(DetectOptions{
+		WorkingDir: appDir,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m.Services) != 2 {
+		t.Fatalf("expected 2 services, got %d: %+v", len(m.Services), m.Services)
+	}
+	if m.Services[0].Name != "smart-printer-firmware" || m.Services[0].Context != "." {
+		t.Fatalf("expected smart-printer-firmware as first service with context ., got %+v", m.Services[0])
+	}
+	if m.Services[1].Name != "nginx" || m.Services[1].Context != "./nginx" {
+		t.Fatalf("expected nginx as second service with context ./nginx, got %+v", m.Services[1])
+	}
+}
+
+

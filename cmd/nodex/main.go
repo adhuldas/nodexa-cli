@@ -24,7 +24,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "0.1.5"
+var Version = "0.1.6"
 
 const (
 	DefaultRegistryHost = "nodexa.elzora.tech"

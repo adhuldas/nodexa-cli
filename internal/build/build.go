@@ -9,13 +9,31 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
+// resolveDockerfile returns the Dockerfile path to pass to docker CLI.
+// If dockerfile is a relative path and filepath.Join(context, dockerfile) exists,
+// it uses filepath.Join(context, dockerfile) so docker CLI doesn't mistakenly resolve
+// -f relative to CWD instead of the build context directory.
+func resolveDockerfile(context, dockerfile string) string {
+	if filepath.IsAbs(dockerfile) {
+		return dockerfile
+	}
+	if candidate := filepath.Join(context, dockerfile); candidate != dockerfile {
+		if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() {
+			return candidate
+		}
+	}
+	return dockerfile
+}
+
 // Build runs `docker build` for the given image reference.
 // If platform is non-empty, --platform is passed to docker build.
 func Build(imageRef, dockerfile, context, platform string) error {
+	dockerfile = resolveDockerfile(context, dockerfile)
 	var args []string
 	if platform != "" {
 		fmt.Printf("  → building %s (platform=%s, dockerfile=%s, context=%s)\n", imageRef, platform, dockerfile, context)
@@ -36,6 +54,7 @@ func Build(imageRef, dockerfile, context, platform string) error {
 // BuildxPush runs `docker buildx build --platform ... --push` for multi-platform images,
 // writes metadata to a temp file, and extracts the manifest digest.
 func BuildxPush(imageRef, dockerfile, context, platform string) (string, error) {
+	dockerfile = resolveDockerfile(context, dockerfile)
 	fmt.Printf("  → building & pushing multi-platform %s (platform=%s)\n", imageRef, platform)
 	tmpFile, err := os.CreateTemp("", "nodex-buildx-*.json")
 	if err != nil {

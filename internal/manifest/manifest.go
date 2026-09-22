@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -199,48 +200,81 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 		}
 	}
 
-	// If no services had explicit build blocks, check if there's a root Dockerfile
-	if len(services) == 0 {
-		rootDocker := filepath.Join(workingDir, "Dockerfile")
-		if fi, err := os.Stat(rootDocker); err == nil && !fi.IsDir() {
-			if targetService != "" {
-				services = append(services, Service{
-					Name:       targetService,
-					Dockerfile: "Dockerfile",
-					Context:    ".",
-					Platform:   svcPlatforms[targetService],
-				})
-			} else if len(nonBuildServiceNames) == 1 {
-				// Single service in compose file (e.g. backend)
-				services = append(services, Service{
-					Name:       nonBuildServiceNames[0],
-					Dockerfile: "Dockerfile",
-					Context:    ".",
-					Platform:   svcPlatforms[nonBuildServiceNames[0]],
-				})
-			} else if len(nonBuildServiceNames) > 1 {
-				// Multiple services without build: if one matches dir name, use it; else use first
-				chosen := nonBuildServiceNames[0]
-				dirName := sanitizeServiceName(dirBaseName(workingDir))
+	// Check if any service already uses root context
+	hasRootContext := false
+	for _, s := range services {
+		if s.Context == "." || s.Context == "" {
+			hasRootContext = true
+			break
+		}
+	}
+
+	// If there's a root Dockerfile and no service is already using the root context,
+	// match a non-build service from compose to it (e.g. main app in repo).
+	rootDocker := filepath.Join(workingDir, "Dockerfile")
+	if fi, err := os.Stat(rootDocker); err == nil && !fi.IsDir() && !hasRootContext && len(nonBuildServiceNames) > 0 {
+		var matchedName string
+		dirName := sanitizeServiceName(dirBaseName(workingDir))
+
+		if targetService != "" {
+			for _, name := range nonBuildServiceNames {
+				if name == targetService {
+					matchedName = name
+					break
+				}
+			}
+		} else {
+			// 1. Check if any non-build service matches the directory name (e.g. smart-printer-firmware)
+			for _, name := range nonBuildServiceNames {
+				if sanitizeServiceName(name) == dirName {
+					matchedName = name
+					break
+				}
+			}
+			// 2. If not matched, but there's only 1 non-build service
+			if matchedName == "" && len(nonBuildServiceNames) == 1 {
+				matchedName = nonBuildServiceNames[0]
+			}
+			// 3. Substring match with directory name
+			if matchedName == "" {
 				for _, name := range nonBuildServiceNames {
-					if sanitizeServiceName(name) == dirName {
-						chosen = name
+					sn := sanitizeServiceName(name)
+					if strings.Contains(dirName, sn) || strings.Contains(sn, dirName) {
+						matchedName = name
 						break
 					}
 				}
-				services = append(services, Service{
-					Name:       chosen,
-					Dockerfile: "Dockerfile",
-					Context:    ".",
-					Platform:   svcPlatforms[chosen],
-				})
 			}
+			// 4. If no other services had build blocks at all, fallback to first non-build service
+			if matchedName == "" && len(services) == 0 {
+				matchedName = nonBuildServiceNames[0]
+			}
+		}
+
+		if matchedName != "" {
+			services = append(services, Service{
+				Name:       matchedName,
+				Dockerfile: "Dockerfile",
+				Context:    ".",
+				Platform:   svcPlatforms[matchedName],
+			})
 		}
 	}
 
 	if len(services) == 0 {
 		return nil, fmt.Errorf("no buildable services or Dockerfiles found in compose file")
 	}
+
+	// Sort services in the order they appeared in compose file
+	order := make(map[string]int)
+	idx := 0
+	for i := 0; i < len(servicesNode.Content)-1; i += 2 {
+		order[servicesNode.Content[i].Value] = idx
+		idx++
+	}
+	sort.SliceStable(services, func(i, j int) bool {
+		return order[services[i].Name] < order[services[j].Name]
+	})
 
 	return &Manifest{Services: services}, nil
 }
