@@ -2,10 +2,10 @@
 //
 // Usage:
 //
-//	nodex push --fleet-id <fleet-id> --token <token> [--file nodexa.yml]
+//	nodex push --fleet-id <fleet-id> --token <token> [--service <name>]
 //
 // The push command:
-//  1. Parses nodexa.yml from CWD (or --file path)
+//  1. Resolves services from nodexa.yml or auto-detects from repository (Dockerfile, compose)
 //  2. Reserves a release via POST /v1/fleets/{fleet_id}/releases
 //  3. Logs into the registry with the API token
 //  4. For each service: docker build → docker push → capture digest
@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "0.1.0"
+var Version = "0.1.2"
 
 const (
 	DefaultRegistryHost = "nodexa.elzora.tech"
@@ -32,10 +32,11 @@ const (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:     "nodex",
-		Short:   "Nodexa Deploy CLI",
-		Long:    "CLI for building and pushing container images to a nodexa-registry instance.",
-		Version: Version,
+		Use:          "nodex",
+		Short:        "Nodexa Deploy CLI",
+		Long:         "CLI for building and pushing container images to a nodexa-registry instance.",
+		Version:      Version,
+		SilenceUsage: true,
 	}
 
 	pushCmd := newPushCmd()
@@ -49,6 +50,10 @@ func main() {
 func newPushCmd() *cobra.Command {
 	var (
 		manifestFile string
+		composeFile  string
+		serviceName  string
+		dockerfile   string
+		contextDir   string
 		fleetID      string
 		registryHost string
 		registryURL  string
@@ -58,16 +63,32 @@ func newPushCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "push",
 		Short: "Build and push images for a release",
-		Long: `Reads a nodexa.yml manifest, reserves a release on nodexa-registry,
-builds each service's Docker image, pushes it, and completes the release.`,
+		Long: `Builds each service's Docker image, pushes it to the Nodexa registry,
+and completes the release. Automatically detects Dockerfile or compose files
+in your repository, or reads a nodexa.yml manifest.`,
 		Example: `  nodex push --fleet-id 6aa7090a7f1a3400237fa78c --token <api-token>
+  nodex push --fleet-id 6aa7090a7f1a3400237fa78c --service backend
+  nodex push --fleet-id 6aa7090a7f1a3400237fa78c -c docker-compose.yml
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c -f custom-nodexa.yml`,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPush(manifestFile, fleetID, registryHost, registryURL, apiToken)
+			explicitFile := cmd.Flags().Changed("file")
+			return runPush(manifest.DetectOptions{
+				ManifestPath: manifestFile,
+				ExplicitFile: explicitFile,
+				ComposePath:  composeFile,
+				ServiceName:  serviceName,
+				Dockerfile:   dockerfile,
+				Context:      contextDir,
+			}, fleetID, registryHost, registryURL, apiToken)
 		},
 	}
 
-	cmd.Flags().StringVarP(&manifestFile, "file", "f", "nodexa.yml", "Path to the nodexa.yml manifest")
+	cmd.Flags().StringVarP(&manifestFile, "file", "f", "nodexa.yml", "Path to the nodexa.yml manifest (optional if Dockerfile exists)")
+	cmd.Flags().StringVarP(&composeFile, "compose-file", "c", "", "Path to docker-compose.yml file")
+	cmd.Flags().StringVarP(&serviceName, "service", "s", "", "Service name override (for single-container repos without nodexa.yml)")
+	cmd.Flags().StringVar(&dockerfile, "dockerfile", "", "Path to Dockerfile (defaults to Dockerfile in current directory)")
+	cmd.Flags().StringVar(&contextDir, "context", "", "Docker build context directory (defaults to .)")
 	cmd.Flags().StringVar(&fleetID, "fleet-id", envOrDefault("NODEXA_FLEET_ID", ""), "Fleet ID to push to (required)")
 	cmd.Flags().StringVar(&apiToken, "token", envOrDefault("NODEXA_API_TOKEN", ""), "API token for authentication (required)")
 
@@ -83,12 +104,17 @@ builds each service's Docker image, pushes it, and completes the release.`,
 	return cmd
 }
 
-func runPush(manifestFile, fleetID, registryHost, registryURL, apiToken string) error {
-	// 1. Parse manifest.
-	fmt.Printf("📋 Reading manifest: %s\n", manifestFile)
-	m, err := manifest.Load(manifestFile)
+func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, apiToken string) error {
+	// 1. Resolve manifest (explicit file, default nodexa.yml/yaml, or auto-detected).
+	m, desc, err := manifest.DetectOrLoad(opts)
 	if err != nil {
 		return err
+	}
+
+	if opts.ExplicitFile || desc == "manifest: nodexa.yml" || desc == "manifest: nodexa.yaml" {
+		fmt.Printf("📋 Reading manifest: %s\n", desc)
+	} else {
+		fmt.Printf("🔍 %s\n", desc)
 	}
 	fmt.Printf("   Found %d service(s): %v\n", len(m.Services), m.ServiceNames())
 
