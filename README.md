@@ -148,7 +148,38 @@ registries:
 > echo "registry*.yml" >> .gitignore
 > ```
 
-Before pulling images, `nodex push` logs into each external registry, ensuring private image pulls succeed seamlessly.
+### Push Command Examples with Registry Authentication
+
+**Automatic Detection** (if `registry.yml` is in the current directory):
+```bash
+nodex push \
+  --fleet-id <fleet-uuid> \
+  --token <nodexa-api-token> \
+  --platform linux/arm/v7 \
+  -f docker-compose.yml
+```
+
+**Explicit Registry File** (using `-r` or `--registry-file`):
+```bash
+nodex push \
+  --fleet-id <fleet-uuid> \
+  --token <nodexa-api-token> \
+  --platform linux/arm/v7 \
+  -f docker-compose.yml \
+  -r registry.yml
+```
+
+**Using Custom Path**:
+```bash
+nodex push \
+  --fleet-id 6aa7090a7f1a3400237fa78c \
+  --token <nodexa-api-token> \
+  --platform linux/arm/v7 \
+  --registry-file ~/.config/nodexa/registry.yml \
+  -f docker-compose.yml
+```
+
+Before pulling images, `nodex push` reads the file, logs into each external registry (e.g. `ghcr.io`), pulls pre-built images with authentication, tags them for Nodexa, and pushes them to `nodexa.elzora.tech`.
 
 ---
 
