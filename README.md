@@ -49,8 +49,6 @@ Push a release:
 
 ```bash
 nodex push \
-  --registry nodexa.elzora.tech \
-  --registry-url https://nodexa.elzora.tech/registry \
   --fleet-id <fleet-uuid> \
   --token <nodexa-api-token>
 ```
@@ -69,9 +67,9 @@ nodex push \
 |------|---------|---------|-------------|
 | `-f, --file` | — | `nodexa.yml` | Path to manifest |
 | `--fleet-id` | `NODEXA_FLEET_ID` | — | Fleet ID (required) |
-| `--registry` | `NODEXA_REGISTRY_HOST` | `localhost:5000` | Registry host for docker login |
-| `--registry-url` | `NODEXA_REGISTRY_URL` | `http://localhost:8000` | nodexa-registry API URL |
 | `--token` | `NODEXA_API_TOKEN` | — | API token (required) |
+
+> **Registry Target**: The CLI natively targets the Nodexa cloud registry (`nodexa.elzora.tech`). End users do not need to specify registry hosts or URLs.
 
 ## `nodexa.yml` Spec
 

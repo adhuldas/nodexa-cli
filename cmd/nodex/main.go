@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	nodex push [--file nodexa.yml] [--fleet-id FLEET] [--registry HOST] [--token TOKEN]
+//	nodex push --fleet-id <fleet-id> --token <token> [--file nodexa.yml]
 //
 // The push command:
 //  1. Parses nodexa.yml from CWD (or --file path)
@@ -24,6 +24,11 @@ import (
 )
 
 var Version = "0.1.0"
+
+const (
+	DefaultRegistryHost = "nodexa.elzora.tech"
+	DefaultRegistryURL  = "https://nodexa.elzora.tech/registry"
+)
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -55,6 +60,8 @@ func newPushCmd() *cobra.Command {
 		Short: "Build and push images for a release",
 		Long: `Reads a nodexa.yml manifest, reserves a release on nodexa-registry,
 builds each service's Docker image, pushes it, and completes the release.`,
+		Example: `  nodex push --fleet-id 6aa7090a7f1a3400237fa78c --token <api-token>
+  nodex push --fleet-id 6aa7090a7f1a3400237fa78c -f custom-nodexa.yml`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPush(manifestFile, fleetID, registryHost, registryURL, apiToken)
 		},
@@ -62,9 +69,13 @@ builds each service's Docker image, pushes it, and completes the release.`,
 
 	cmd.Flags().StringVarP(&manifestFile, "file", "f", "nodexa.yml", "Path to the nodexa.yml manifest")
 	cmd.Flags().StringVar(&fleetID, "fleet-id", envOrDefault("NODEXA_FLEET_ID", ""), "Fleet ID to push to (required)")
-	cmd.Flags().StringVar(&registryHost, "registry", envOrDefault("NODEXA_REGISTRY_HOST", "localhost:5000"), "Registry host (for docker login)")
-	cmd.Flags().StringVar(&registryURL, "registry-url", envOrDefault("NODEXA_REGISTRY_URL", "http://localhost:8000"), "nodexa-registry API base URL")
 	cmd.Flags().StringVar(&apiToken, "token", envOrDefault("NODEXA_API_TOKEN", ""), "API token for authentication (required)")
+
+	// Native registry defaults — official Nodexa cloud targets are built-in natively.
+	cmd.Flags().StringVar(&registryHost, "registry", envOrDefault("NODEXA_REGISTRY_HOST", DefaultRegistryHost), "Registry host for image tags")
+	cmd.Flags().StringVar(&registryURL, "registry-url", envOrDefault("NODEXA_REGISTRY_URL", DefaultRegistryURL), "nodexa-registry API base URL")
+	_ = cmd.Flags().MarkHidden("registry")
+	_ = cmd.Flags().MarkHidden("registry-url")
 
 	_ = cmd.MarkFlagRequired("fleet-id")
 	_ = cmd.MarkFlagRequired("token")
