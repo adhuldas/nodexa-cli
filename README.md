@@ -1,17 +1,34 @@
 # nodexa-cli
 
-CLI for building and pushing container images to [nodexa-registry](https://github.com/nodexa-os/nodexa-registry).
+CLI for building and pushing container images to [nodexa-registry](https://github.com/adhuldas/nodexa-registry).
 
 ## Install
+
+### Quick Install (macOS & Linux)
+
+Install directly to `/usr/local/bin` without needing Go installed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adhuldas/nodexa-cli/main/install.sh | sh
+```
+
+### With Go
 
 ```bash
 go install github.com/adhuldas/nodexa-cli/cmd/nodex@latest
 ```
 
-Or build from source:
+### Build from Source
 
 ```bash
-go build -o nodex ./cmd/nodex/
+git clone https://github.com/adhuldas/nodexa-cli.git
+cd nodexa-cli
+go build -o /usr/local/bin/nodex ./cmd/nodex
+```
+
+Verify the installation:
+```bash
+nodex --version
 ```
 
 ## Usage

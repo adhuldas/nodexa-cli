@@ -23,11 +23,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var Version = "0.1.0"
+
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "nodex",
-		Short: "Nodexa Deploy CLI",
-		Long:  "CLI for building and pushing container images to a nodexa-registry instance.",
+		Use:     "nodex",
+		Short:   "Nodexa Deploy CLI",
+		Long:    "CLI for building and pushing container images to a nodexa-registry instance.",
+		Version: Version,
 	}
 
 	pushCmd := newPushCmd()
