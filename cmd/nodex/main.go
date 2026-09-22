@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "0.1.2"
+var Version = "0.1.4"
 
 const (
 	DefaultRegistryHost = "nodexa.elzora.tech"
@@ -172,8 +172,54 @@ func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, ap
 	}
 	fmt.Printf("   Release %d is now %s\n", completed.Revision, completed.Status)
 	fmt.Println("\n🎉 Push complete!")
+	printSuccessLogo()
 
 	return nil
+}
+
+func printSuccessLogo() {
+	const (
+		cCloud1 = "\033[38;5;45m"
+		cCloud2 = "\033[38;5;39m"
+		cCloud3 = "\033[38;5;33m"
+		cDot    = "\033[38;5;39m"
+		cStem   = "\033[38;5;33m"
+		cWhite  = "\033[1;97m"
+		cBlue   = "\033[1;38;5;33m"
+		cMuted  = "\033[38;5;250m"
+		rst     = "\033[0m"
+	)
+
+	fmt.Printf(`
+%s              .---..---.
+           .-'          '-.
+          (       %s(●)%s      )
+         (    %s(●)%s  |  %s(●)%s   )
+          (     %s\  |  /    %s)
+           '-.   %s\(●)/  %s.-'
+              '--'---'--'%s
+
+       %s_   __          __     %s_  __ ______ __                 __%s
+      %s/ | / /___  ____/ /__   %s| |/ // ____// /___  __  ______/ /%s
+     %s/  |/ / __ \/ __  / _ \  %s|   // /    / // __ \/ / / // __  /%s
+    %s/ /|  / /_/ / /_/ /  __/  %s/   |/ /___ / // /_/ / /_/ // /_/ / %s
+   %s/_/ |_/\____/\__,_/\___/   %s/_/|_|\____//_/ \____/\__,_/ \__,_/  %s
+
+                  %sConnect  •  Monitor  •  Scale%s
+`+"\n",
+		cCloud1,
+		cDot, cCloud2,
+		cDot, cStem, cDot, cCloud2,
+		cStem, cCloud3,
+		cStem, cCloud3,
+		rst,
+		cWhite, cBlue, rst,
+		cWhite, cBlue, rst,
+		cWhite, cBlue, rst,
+		cWhite, cBlue, rst,
+		cWhite, cBlue, rst,
+		cMuted, rst,
+	)
 }
 
 func failRelease(c *client.Client, fleetID string, revision int) error {
