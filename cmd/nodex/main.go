@@ -16,6 +16,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/adhuldas/nodexa-cli/internal/build"
 	"github.com/adhuldas/nodexa-cli/internal/client"
@@ -23,7 +24,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "0.1.4"
+var Version = "0.1.5"
 
 const (
 	DefaultRegistryHost = "nodexa.elzora.tech"
@@ -58,6 +59,7 @@ func newPushCmd() *cobra.Command {
 		registryHost string
 		registryURL  string
 		apiToken     string
+		platform     string
 	)
 
 	cmd := &cobra.Command{
@@ -67,6 +69,7 @@ func newPushCmd() *cobra.Command {
 and completes the release. Automatically detects Dockerfile or compose files
 in your repository, or reads a nodexa.yml manifest.`,
 		Example: `  nodex push --fleet-id 6aa7090a7f1a3400237fa78c --token <api-token>
+  nodex push --fleet-id 6aa7090a7f1a3400237fa78c --platform linux/arm/v7
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c --service backend
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c -c docker-compose.yml
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c -f custom-nodexa.yml`,
@@ -80,6 +83,7 @@ in your repository, or reads a nodexa.yml manifest.`,
 				ServiceName:  serviceName,
 				Dockerfile:   dockerfile,
 				Context:      contextDir,
+				Platform:     platform,
 			}, fleetID, registryHost, registryURL, apiToken)
 		},
 	}
@@ -89,6 +93,7 @@ in your repository, or reads a nodexa.yml manifest.`,
 	cmd.Flags().StringVarP(&serviceName, "service", "s", "", "Service name override (for single-container repos without nodexa.yml)")
 	cmd.Flags().StringVar(&dockerfile, "dockerfile", "", "Path to Dockerfile (defaults to Dockerfile in current directory)")
 	cmd.Flags().StringVar(&contextDir, "context", "", "Docker build context directory (defaults to .)")
+	cmd.Flags().StringVarP(&platform, "platform", "p", envOrDefault("NODEXA_PLATFORM", ""), "Target platform for container build (e.g. linux/arm/v7, linux/arm64, linux/amd64)")
 	cmd.Flags().StringVar(&fleetID, "fleet-id", envOrDefault("NODEXA_FLEET_ID", ""), "Fleet ID to push to (required)")
 	cmd.Flags().StringVar(&apiToken, "token", envOrDefault("NODEXA_API_TOKEN", ""), "API token for authentication (required)")
 
@@ -150,15 +155,27 @@ func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, ap
 			return fmt.Errorf("no image ref returned for service %q", svc.Name)
 		}
 
-		if err := build.Build(ref, svc.Dockerfile, svc.Context); err != nil {
-			_ = failRelease(c, fleetID, release.Revision)
-			return err
-		}
+		var digest string
+		if strings.Contains(svc.Platform, ",") {
+			// Multi-platform build directly builds and pushes manifest list to registry
+			d, err := build.BuildxPush(ref, svc.Dockerfile, svc.Context, svc.Platform)
+			if err != nil {
+				_ = failRelease(c, fleetID, release.Revision)
+				return err
+			}
+			digest = d
+		} else {
+			if err := build.Build(ref, svc.Dockerfile, svc.Context, svc.Platform); err != nil {
+				_ = failRelease(c, fleetID, release.Revision)
+				return err
+			}
 
-		digest, err := build.Push(ref)
-		if err != nil {
-			_ = failRelease(c, fleetID, release.Revision)
-			return err
+			d, err := build.Push(ref)
+			if err != nil {
+				_ = failRelease(c, fleetID, release.Revision)
+				return err
+			}
+			digest = d
 		}
 		digests[svc.Name] = digest
 		fmt.Printf("   ✅ %s → %s\n", svc.Name, digest)

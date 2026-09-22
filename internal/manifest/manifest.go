@@ -24,10 +24,13 @@ type Service struct {
 	Dockerfile string `yaml:"dockerfile"`
 	// Context is the Docker build context directory (default: ".").
 	Context string `yaml:"context"`
+	// Platform is the target platform for the container image (e.g. "linux/arm/v7", "linux/arm64").
+	Platform string `yaml:"platform,omitempty"`
 }
 
 // Manifest is the top-level structure of a nodexa.yml file or auto-detected release.
 type Manifest struct {
+	Platform string    `yaml:"platform,omitempty"`
 	Services []Service `yaml:"services"`
 }
 
@@ -39,6 +42,7 @@ type DetectOptions struct {
 	ServiceName  string // User-provided service name via -s/--service
 	Dockerfile   string // User-provided Dockerfile path via --dockerfile
 	Context      string // User-provided build context via --context
+	Platform     string // User-provided platform via -p/--platform
 	WorkingDir   string // Working directory to search (defaults to "." if empty)
 }
 
@@ -80,6 +84,9 @@ func Load(path string) (*Manifest, error) {
 		}
 		if m.Services[i].Context == "" {
 			m.Services[i].Context = "."
+		}
+		if m.Services[i].Platform == "" && m.Platform != "" {
+			m.Services[i].Platform = m.Platform
 		}
 	}
 
@@ -123,6 +130,7 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 
 	var services []Service
 	var nonBuildServiceNames []string
+	svcPlatforms := make(map[string]string)
 
 	for i := 0; i < len(servicesNode.Content)-1; i += 2 {
 		svcName := servicesNode.Content[i].Value
@@ -134,11 +142,19 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 		}
 
 		var buildNode *yaml.Node
-		for j := 0; j < len(svcVal.Content)-1; j += 2 {
-			if svcVal.Content[j].Value == "build" {
-				buildNode = svcVal.Content[j+1]
-				break
+		var svcPlatform string
+		if svcVal.Kind == yaml.MappingNode {
+			for j := 0; j < len(svcVal.Content)-1; j += 2 {
+				key := svcVal.Content[j].Value
+				if key == "build" {
+					buildNode = svcVal.Content[j+1]
+				} else if key == "platform" {
+					svcPlatform = svcVal.Content[j+1].Value
+				}
 			}
+		}
+		if svcPlatform != "" {
+			svcPlatforms[svcName] = svcPlatform
 		}
 
 		if buildNode != nil {
@@ -146,6 +162,7 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 				Name:       svcName,
 				Dockerfile: "Dockerfile",
 				Context:    ".",
+				Platform:   svcPlatform,
 			}
 
 			if buildNode.Kind == yaml.ScalarNode {
@@ -159,6 +176,8 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 						svc.Context = val
 					case "dockerfile":
 						svc.Dockerfile = val
+					case "platform":
+						svc.Platform = val
 					}
 				}
 			}
@@ -172,6 +191,7 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 					Name:       svcName,
 					Dockerfile: "Dockerfile",
 					Context:    svcName,
+					Platform:   svcPlatform,
 				})
 			} else {
 				nonBuildServiceNames = append(nonBuildServiceNames, svcName)
@@ -188,6 +208,7 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 					Name:       targetService,
 					Dockerfile: "Dockerfile",
 					Context:    ".",
+					Platform:   svcPlatforms[targetService],
 				})
 			} else if len(nonBuildServiceNames) == 1 {
 				// Single service in compose file (e.g. backend)
@@ -195,6 +216,7 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 					Name:       nonBuildServiceNames[0],
 					Dockerfile: "Dockerfile",
 					Context:    ".",
+					Platform:   svcPlatforms[nonBuildServiceNames[0]],
 				})
 			} else if len(nonBuildServiceNames) > 1 {
 				// Multiple services without build: if one matches dir name, use it; else use first
@@ -210,6 +232,7 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 					Name:       chosen,
 					Dockerfile: "Dockerfile",
 					Context:    ".",
+					Platform:   svcPlatforms[chosen],
 				})
 			}
 		}
@@ -240,7 +263,7 @@ func DetectOrLoad(opts DetectOptions) (*Manifest, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		return m, fmt.Sprintf("compose file: %s", opts.ComposePath), nil
+		return applyPlatform(m, opts.Platform), fmt.Sprintf("compose file: %s", opts.ComposePath), nil
 	}
 
 	// 2. Explicit manifest file requested via -f/--file.
@@ -253,7 +276,7 @@ func DetectOrLoad(opts DetectOptions) (*Manifest, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		return m, fmt.Sprintf("file: %s", opts.ManifestPath), nil
+		return applyPlatform(m, opts.Platform), fmt.Sprintf("file: %s", opts.ManifestPath), nil
 	}
 
 	// 3. Discover default nodexa.yml or nodexa.yaml in working directory.
@@ -264,7 +287,7 @@ func DetectOrLoad(opts DetectOptions) (*Manifest, string, error) {
 			if err != nil {
 				return nil, "", err
 			}
-			return m, fmt.Sprintf("manifest: %s", name), nil
+			return applyPlatform(m, opts.Platform), fmt.Sprintf("manifest: %s", name), nil
 		}
 	}
 
@@ -274,7 +297,7 @@ func DetectOrLoad(opts DetectOptions) (*Manifest, string, error) {
 		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
 			m, err := LoadCompose(p, opts.ServiceName)
 			if err == nil && len(m.Services) > 0 {
-				return m, fmt.Sprintf("compose file: %s", name), nil
+				return applyPlatform(m, opts.Platform), fmt.Sprintf("compose file: %s", name), nil
 			}
 		}
 	}
@@ -301,7 +324,7 @@ func DetectOrLoad(opts DetectOptions) (*Manifest, string, error) {
 			contextDir = opts.Context
 		}
 
-		return &Manifest{
+		return applyPlatform(&Manifest{
 			Services: []Service{
 				{
 					Name:       serviceName,
@@ -309,7 +332,7 @@ func DetectOrLoad(opts DetectOptions) (*Manifest, string, error) {
 					Context:    contextDir,
 				},
 			},
-		}, detectedVia, nil
+		}, opts.Platform), detectedVia, nil
 	}
 
 	// 6. If user supplied both --service and --dockerfile flags, allow building even if not in workingDir.
@@ -318,7 +341,7 @@ func DetectOrLoad(opts DetectOptions) (*Manifest, string, error) {
 		if opts.Context != "" {
 			contextDir = opts.Context
 		}
-		return &Manifest{
+		return applyPlatform(&Manifest{
 			Services: []Service{
 				{
 					Name:       opts.ServiceName,
@@ -326,7 +349,7 @@ func DetectOrLoad(opts DetectOptions) (*Manifest, string, error) {
 					Context:    contextDir,
 				},
 			},
-		}, "CLI flags (--service, --dockerfile)", nil
+		}, opts.Platform), "CLI flags (--service, --dockerfile)", nil
 	}
 
 	// 7. Nothing found — return a clear and helpful error message.
@@ -392,4 +415,14 @@ func dirBaseName(dir string) string {
 		return "app"
 	}
 	return base
+}
+
+func applyPlatform(m *Manifest, platform string) *Manifest {
+	if m == nil || platform == "" {
+		return m
+	}
+	for i := range m.Services {
+		m.Services[i].Platform = platform
+	}
+	return m
 }

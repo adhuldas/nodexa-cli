@@ -304,3 +304,71 @@ func TestDetectOrLoad_NotFound(t *testing.T) {
 		t.Fatal("expected error when nothing deployable found, got nil")
 	}
 }
+
+func TestDetectOrLoad_ManifestWithPlatform(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestContent := `
+platform: linux/arm/v7
+services:
+  - name: backend
+    dockerfile: Dockerfile
+`
+	manifestPath := filepath.Join(tmpDir, "nodexa.yml")
+	if err := os.WriteFile(manifestPath, []byte(manifestContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, _, err := DetectOrLoad(DetectOptions{WorkingDir: tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m.Services) != 1 || m.Services[0].Platform != "linux/arm/v7" {
+		t.Fatalf("expected platform linux/arm/v7, got %+v", m.Services)
+	}
+}
+
+func TestDetectOrLoad_ComposeWithPlatform(t *testing.T) {
+	tmpDir := t.TempDir()
+	composeContent := `
+services:
+  backend:
+    platform: linux/arm/v7
+    build: .
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "docker-compose.yml"), []byte(composeContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, _, err := DetectOrLoad(DetectOptions{WorkingDir: tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m.Services) != 1 || m.Services[0].Platform != "linux/arm/v7" {
+		t.Fatalf("expected platform linux/arm/v7 from compose, got %+v", m.Services)
+	}
+}
+
+func TestDetectOrLoad_CLIPlatformOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestContent := `
+services:
+  - name: backend
+    platform: linux/amd64
+`
+	manifestPath := filepath.Join(tmpDir, "nodexa.yml")
+	if err := os.WriteFile(manifestPath, []byte(manifestContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, _, err := DetectOrLoad(DetectOptions{
+		WorkingDir: tmpDir,
+		Platform:   "linux/arm/v7",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m.Services) != 1 || m.Services[0].Platform != "linux/arm/v7" {
+		t.Fatalf("expected CLI platform linux/arm/v7 to override manifest, got %+v", m.Services)
+	}
+}
+

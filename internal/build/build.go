@@ -5,22 +5,87 @@ package build
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
 // Build runs `docker build` for the given image reference.
-func Build(imageRef, dockerfile, context string) error {
-	fmt.Printf("  → building %s (dockerfile=%s, context=%s)\n", imageRef, dockerfile, context)
-	cmd := exec.Command("docker", "build", "-t", imageRef, "-f", dockerfile, context)
+// If platform is non-empty, --platform is passed to docker build.
+func Build(imageRef, dockerfile, context, platform string) error {
+	var args []string
+	if platform != "" {
+		fmt.Printf("  → building %s (platform=%s, dockerfile=%s, context=%s)\n", imageRef, platform, dockerfile, context)
+		args = []string{"build", "--platform", platform, "-t", imageRef, "-f", dockerfile, context}
+	} else {
+		fmt.Printf("  → building %s (dockerfile=%s, context=%s)\n", imageRef, dockerfile, context)
+		args = []string{"build", "-t", imageRef, "-f", dockerfile, context}
+	}
+	cmd := exec.Command("docker", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("docker build failed for %s: %w", imageRef, err)
 	}
 	return nil
+}
+
+// BuildxPush runs `docker buildx build --platform ... --push` for multi-platform images,
+// writes metadata to a temp file, and extracts the manifest digest.
+func BuildxPush(imageRef, dockerfile, context, platform string) (string, error) {
+	fmt.Printf("  → building & pushing multi-platform %s (platform=%s)\n", imageRef, platform)
+	tmpFile, err := os.CreateTemp("", "nodex-buildx-*.json")
+	if err != nil {
+		return "", fmt.Errorf("creating temp file for buildx metadata: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	_ = tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	args := []string{
+		"buildx", "build",
+		"--platform", platform,
+		"-t", imageRef,
+		"-f", dockerfile,
+		"--push",
+		"--metadata-file", tmpPath,
+		context,
+	}
+
+	cmd := exec.Command("docker", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("docker buildx build --push failed for %s: %w", imageRef, err)
+	}
+
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return "", fmt.Errorf("reading buildx metadata: %w", err)
+	}
+
+	var meta struct {
+		Digest string `json:"containerimage.digest"`
+	}
+	if err := json.Unmarshal(data, &meta); err == nil && meta.Digest != "" {
+		return meta.Digest, nil
+	}
+
+	digest := extractDigest(string(data))
+	if digest != "" {
+		return digest, nil
+	}
+
+	return "", fmt.Errorf("could not extract digest from buildx metadata for %s", imageRef)
+}
+
+var digestRegex = regexp.MustCompile(`sha256:[a-f0-9]{64}`)
+
+func extractDigest(s string) string {
+	return digestRegex.FindString(s)
 }
 
 // Push runs `docker push` and parses the digest from the output.
