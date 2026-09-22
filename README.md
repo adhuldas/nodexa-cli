@@ -5,7 +5,7 @@ CLI for building and pushing container images to [nodexa-registry](https://githu
 ## Install
 
 ```bash
-go install github.com/nodexa-os/nodexa-cli/cmd/nodex@latest
+go install github.com/adhuldas/nodexa-cli/cmd/nodex@latest
 ```
 
 Or build from source:
