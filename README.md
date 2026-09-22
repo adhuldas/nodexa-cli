@@ -32,10 +32,10 @@ Push a release:
 
 ```bash
 nodex push \
-  --fleet-id my-fleet \
-  --token <your-api-token> \
-  --registry localhost:5000 \
-  --registry-url http://localhost:8000
+  --registry nodexa.elzora.tech \
+  --registry-url https://nodexa.elzora.tech/registry \
+  --fleet-id <fleet-uuid> \
+  --token <nodexa-api-token>
 ```
 
 ### What `nodex push` does
