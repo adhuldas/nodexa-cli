@@ -31,6 +31,10 @@ type Service struct {
 	Image string `yaml:"image,omitempty"`
 	// Platform is the target platform for the container image (e.g. "linux/arm/v7", "linux/arm64").
 	Platform string `yaml:"platform,omitempty"`
+	// Wasm is the path to a built WebAssembly module (e.g.
+	// "build/app.wasm"), pushed as-is instead of a container image. ESP32
+	// devices run WebAssembly applications only.
+	Wasm string `yaml:"wasm,omitempty"`
 }
 
 // Manifest is the top-level structure of a nodexa.yml file or auto-detected release.
@@ -83,6 +87,12 @@ func Load(path string) (*Manifest, error) {
 	for i := range m.Services {
 		if m.Services[i].Name == "" {
 			return nil, fmt.Errorf("manifest %s: service[%d].name is required", path, i)
+		}
+		if m.Services[i].Wasm != "" {
+			if m.Services[i].Image != "" || m.Services[i].Dockerfile != "" {
+				return nil, fmt.Errorf("manifest %s: service %q: wasm can't be combined with image or dockerfile", path, m.Services[i].Name)
+			}
+			continue
 		}
 		if m.Services[i].Image == "" {
 			if m.Services[i].Dockerfile == "" {

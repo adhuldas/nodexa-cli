@@ -9,6 +9,7 @@
 //  2. Reserves a release via POST /v1/fleets/{fleet_id}/releases
 //  3. Logs into the registry with the API token
 //  4. For each service: docker build → docker push → capture digest
+//     (WebAssembly services: push the module as an OCI artifact)
 //  5. Completes the release via PATCH .../complete with digests
 //     On any error → PATCH .../fail
 package main
@@ -70,7 +71,17 @@ func newPushCmd() *cobra.Command {
 		Short: "Build and push images for a release",
 		Long: `Builds each service's Docker image, pushes it to the Nodexa registry,
 and completes the release. Automatically detects Dockerfile or compose files
-in your repository, or reads a nodexa.yml manifest.`,
+in your repository, or reads a nodexa.yml manifest.
+
+ESP32 devices run WebAssembly applications instead of containers. Build your
+application for wasm32-wasi and point a nodexa.yml service at the module:
+
+  services:
+    - name: sensor
+      wasm: build/sensor.wasm
+
+It's pushed as an OCI artifact (no Docker needed) and deployed like any
+other release.`,
 		Example: `  nodex push --fleet-id 6aa7090a7f1a3400237fa78c --token <api-token>
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c --platform linux/arm/v7
   nodex push --fleet-id 6aa7090a7f1a3400237fa78c -r registry.yml
@@ -164,11 +175,18 @@ func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, ap
 		imageRefs[s.Name] = s.ImageRef
 	}
 
-	// 3. Docker login to Nodexa registry.
-	fmt.Printf("\n🔑 Logging into registry %s...\n", registryHost)
-	if err := build.Login(registryHost, "nodex", apiToken); err != nil {
-		_ = failRelease(c, fleetID, release.Revision)
-		return err
+	// 3. Docker login to Nodexa registry (WebAssembly modules are pushed
+	// without Docker).
+	needsDocker := false
+	for _, svc := range m.Services {
+		needsDocker = needsDocker || svc.Wasm == ""
+	}
+	if needsDocker {
+		fmt.Printf("\n🔑 Logging into registry %s...\n", registryHost)
+		if err := build.Login(registryHost, "nodex", apiToken); err != nil {
+			_ = failRelease(c, fleetID, release.Revision)
+			return err
+		}
 	}
 
 	// 4. Build + push each service.
@@ -182,7 +200,14 @@ func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, ap
 		}
 
 		var digest string
-		if svc.Image != "" {
+		if svc.Wasm != "" {
+			d, err := build.PushWasm(ref, svc.Wasm, "nodex", apiToken)
+			if err != nil {
+				_ = failRelease(c, fleetID, release.Revision)
+				return err
+			}
+			digest = d
+		} else if svc.Image != "" {
 			// Pre-built image: pull from source registry, tag with Nodexa ref, and push to Nodexa
 			d, err := build.PullTagPush(svc.Image, ref, svc.Platform)
 			if err != nil {

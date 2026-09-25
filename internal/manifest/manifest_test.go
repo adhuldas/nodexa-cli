@@ -417,4 +417,25 @@ services:
 	}
 }
 
+func TestLoadWasmService(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "nodexa.yml")
+	if err := os.WriteFile(p, []byte("services:\n  - name: sensor\n    wasm: build/sensor.wasm\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := m.Services[0]
+	if s.Wasm != "build/sensor.wasm" || s.Dockerfile != "" || s.Context != "" {
+		t.Fatalf("unexpected service: %+v", s)
+	}
 
+	if err := os.WriteFile(p, []byte("services:\n  - name: sensor\n    wasm: a.wasm\n    image: x/y\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil {
+		t.Fatal("wasm with image should be rejected")
+	}
+}
