@@ -12,6 +12,14 @@ Install directly to `/usr/local/bin` without needing Go installed:
 curl -fsSL https://raw.githubusercontent.com/adhuldas/nodexa-cli/main/install.sh | sh
 ```
 
+### Quick Install (Windows)
+
+Install to `$LOCALAPPDATA\nodex\bin` and add to PATH via PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/adhuldas/nodexa-cli/main/install.ps1 | iex
+```
+
 ### With Go
 
 ```bash

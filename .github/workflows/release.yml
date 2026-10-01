@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build & Release
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -25,6 +25,9 @@ jobs:
             arch: arm64
           - os: windows
             arch: amd64
+            ext: .exe
+          - os: windows
+            arch: arm64
             ext: .exe
 
     steps:
@@ -45,14 +48,41 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           OUTPUT="nodex${{ matrix.ext }}"
           go build -ldflags "-s -w -X main.Version=${VERSION}" -o "${OUTPUT}" ./cmd/nodex
-          
-          ARCHIVE="nodex_${{ matrix.os }}_${{ matrix.arch }}.tar.gz"
-          tar -czf "${ARCHIVE}" "${OUTPUT}"
-          echo "ARCHIVE=${ARCHIVE}" >> $GITHUB_ENV
 
-      - name: Upload Release Asset
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            zip "nodex_${{ matrix.os }}_${{ matrix.arch }}.zip" "${OUTPUT}"
+            tar -czf "nodex_${{ matrix.os }}_${{ matrix.arch }}.tar.gz" "${OUTPUT}"
+          else
+            tar -czf "nodex_${{ matrix.os }}_${{ matrix.arch }}.tar.gz" "${OUTPUT}"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: assets-${{ matrix.os }}-${{ matrix.arch }}
+          path: nodex_*.*
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: assets-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate Checksums
+        working-directory: dist
+        run: |
+          sha256sum nodex_* > checksums.txt
+
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ARCHIVE }}
+          files: dist/*
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
