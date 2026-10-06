@@ -35,6 +35,9 @@ type Service struct {
 	// "build/app.wasm"), pushed as-is instead of a container image. ESP32
 	// devices run WebAssembly applications only.
 	Wasm string `yaml:"wasm,omitempty"`
+	// Healthcheck is the service's compose healthcheck. The device probes it
+	// while the container runs and restarts the container when it fails.
+	Healthcheck *Healthcheck `yaml:"healthcheck,omitempty"`
 }
 
 // Manifest is the top-level structure of a nodexa.yml file or auto-detected release.
@@ -148,6 +151,7 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 	var services []Service
 	var nonBuildServiceNames []string
 	svcPlatforms := make(map[string]string)
+	svcHealthchecks := make(map[string]*Healthcheck)
 
 	for i := 0; i < len(servicesNode.Content)-1; i += 2 {
 		svcName := servicesNode.Content[i].Value
@@ -170,6 +174,12 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 					svcPlatform = svcVal.Content[j+1].Value
 				} else if key == "image" {
 					svcImage = svcVal.Content[j+1].Value
+				} else if key == "healthcheck" {
+					var hc Healthcheck
+					if err := svcVal.Content[j+1].Decode(&hc); err != nil {
+						return nil, fmt.Errorf("compose service %q: %w", svcName, err)
+					}
+					svcHealthchecks[svcName] = &hc
 				}
 			}
 		}
@@ -301,6 +311,9 @@ func LoadComposeFromNode(root *yaml.Node, workingDir string, targetService strin
 	sort.SliceStable(services, func(i, j int) bool {
 		return order[services[i].Name] < order[services[j].Name]
 	})
+	for i := range services {
+		services[i].Healthcheck = svcHealthchecks[services[i].Name]
+	}
 
 	return &Manifest{Services: services}, nil
 }

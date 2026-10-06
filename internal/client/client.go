@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/adhuldas/nodexa-cli/internal/manifest"
 )
 
 // Client talks to nodexa-registry's FastAPI service.
@@ -50,9 +52,16 @@ type ReleaseOut struct {
 
 // ReserveRelease creates a new pending release for the given fleet, returning
 // the assigned revision number and pre-computed image refs for each service.
-func (c *Client) ReserveRelease(fleetID string, serviceNames []string) (*ReleaseOut, error) {
+//
+// healthchecks maps a service name to its healthcheck (see manifest.Healthcheck);
+// it is left out of the request when empty, so an older registry that doesn't
+// know the field still accepts it.
+func (c *Client) ReserveRelease(fleetID string, serviceNames []string, healthchecks map[string]*manifest.Healthcheck) (*ReleaseOut, error) {
 	body := map[string]any{
 		"service_names": serviceNames,
+	}
+	if len(healthchecks) > 0 {
+		body["healthchecks"] = healthchecks
 	}
 	return c.doJSON(http.MethodPost, c.releasesURL(fleetID), body)
 }

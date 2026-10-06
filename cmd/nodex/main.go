@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	nodexcli "github.com/adhuldas/nodexa-cli"
 	"github.com/adhuldas/nodexa-cli/internal/build"
 	"github.com/adhuldas/nodexa-cli/internal/client"
 	"github.com/adhuldas/nodexa-cli/internal/manifest"
@@ -27,7 +28,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "0.1.7"
+// Version is set at release time with -ldflags "-X main.Version=X.Y.Z"
+// (scripts/release.sh). Left empty, the VERSION file embedded in the binary
+// is used -- see version().
+var Version = ""
+
+func version() string {
+	if Version != "" {
+		return Version
+	}
+	return nodexcli.Version()
+}
 
 const (
 	DefaultRegistryHost = "nodexa.elzora.tech"
@@ -39,7 +50,7 @@ func main() {
 		Use:          "nodex",
 		Short:        "Nodexa Deploy CLI",
 		Long:         "CLI for building and pushing container images to a nodexa-registry instance.",
-		Version:      Version,
+		Version:      version(),
 		SilenceUsage: true,
 	}
 
@@ -163,7 +174,7 @@ func runPush(opts manifest.DetectOptions, fleetID, registryHost, registryURL, ap
 	// 2. Reserve release.
 	fmt.Printf("\n📝 Reserving release for fleet %s...\n", fleetID)
 	c := client.New(registryURL, apiToken)
-	release, err := c.ReserveRelease(fleetID, m.ServiceNames())
+	release, err := c.ReserveRelease(fleetID, m.ServiceNames(), m.Healthchecks())
 	if err != nil {
 		return fmt.Errorf("reserving release: %w", err)
 	}

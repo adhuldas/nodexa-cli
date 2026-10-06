@@ -439,3 +439,100 @@ func TestLoadWasmService(t *testing.T) {
 		t.Fatal("wasm with image should be rejected")
 	}
 }
+
+func writeCompose(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "docker-compose.yml")
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestCompose_Healthcheck(t *testing.T) {
+	p := writeCompose(t, `
+services:
+  web:
+    image: nginx:1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 2
+      start_period: 1m30s
+  api:
+    image: api:1
+    healthcheck:
+      test: curl -f http://localhost:8080/health
+  tcp:
+    image: db:1
+    healthcheck:
+      test: ["TCP", "127.0.0.1:5432"]
+      interval: 500ms
+  quiet:
+    image: busybox:1
+    healthcheck:
+      disable: true
+  plain:
+    image: busybox:2
+`)
+	m, err := LoadCompose(p, "")
+	if err != nil {
+		t.Fatalf("LoadCompose: %v", err)
+	}
+	hc := m.Healthchecks()
+
+	web := hc["web"]
+	if web == nil || web.Test[0] != "CMD-SHELL" || web.Interval != 10 || web.Timeout != 3 || web.Retries != 2 || web.StartPeriod != 90 {
+		t.Fatalf("web = %+v", web)
+	}
+	// A bare string is compose's shorthand for CMD-SHELL.
+	if api := hc["api"]; api == nil || len(api.Test) != 2 || api.Test[0] != "CMD-SHELL" || api.Test[1] != "curl -f http://localhost:8080/health" {
+		t.Fatalf("api = %+v", api)
+	}
+	// Sub-second rounds up, so it isn't read as "use the default".
+	if tcp := hc["tcp"]; tcp == nil || tcp.Test[0] != "TCP" || tcp.Interval != 1 {
+		t.Fatalf("tcp = %+v", tcp)
+	}
+	if q := hc["quiet"]; q == nil || len(q.Test) != 1 || q.Test[0] != "NONE" {
+		t.Fatalf("quiet = %+v", q)
+	}
+	if _, ok := hc["plain"]; ok {
+		t.Fatal("a service without a healthcheck must not get one")
+	}
+}
+
+func TestCompose_HealthcheckErrors(t *testing.T) {
+	for name, body := range map[string]string{
+		"no test":      "healthcheck:\n      interval: 5s",
+		"bad duration": "healthcheck:\n      test: [\"CMD\", \"x\"]\n      interval: soon",
+		"negative":     "healthcheck:\n      test: [\"CMD\", \"x\"]\n      timeout: -5s",
+	} {
+		p := writeCompose(t, "services:\n  web:\n    image: nginx:1\n    "+body+"\n")
+		if _, err := LoadCompose(p, ""); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+}
+
+func TestManifest_Healthcheck(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "nodexa.yml")
+	content := `
+services:
+  - name: web
+    image: nginx:1
+    healthcheck:
+      test: ["HTTP", "http://127.0.0.1:80/"]
+      interval: 5s
+`
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if hc := m.Healthchecks()["web"]; hc == nil || hc.Test[0] != "HTTP" || hc.Interval != 5 {
+		t.Fatalf("web = %+v", hc)
+	}
+}
