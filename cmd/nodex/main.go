@@ -41,7 +41,7 @@ func version() string {
 }
 
 const (
-	DefaultRegistryHost = "nodexcloud.tech"
+	DefaultRegistryHost = "app.nodexcloud.tech"
 	DefaultRegistryURL  = "https://app.nodexcloud.tech/registry"
 )
 
