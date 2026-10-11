@@ -41,8 +41,8 @@ func version() string {
 }
 
 const (
-	DefaultRegistryHost = "nodexa.elzora.tech"
-	DefaultRegistryURL  = "https://nodexa.elzora.tech/registry"
+	DefaultRegistryHost = "nodexcloud.tech"
+	DefaultRegistryURL  = "https://nodexcloud.tech/registry"
 )
 
 func main() {

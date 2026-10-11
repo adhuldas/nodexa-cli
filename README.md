@@ -108,7 +108,7 @@ services:
 `nodex push` automatically detects `firmware` as a pre-built image:
 - It **pulls** `ghcr.io/my-org/firmware:latest` (targeting `--platform` if specified)
 - **Tags** it for the Nodexa release repository
-- **Pushes** it to `nodexa.elzora.tech` without rebuilding
+- **Pushes** it to `nodexcloud.tech` without rebuilding
 - Builds only services that declare an explicit `build` block (`nginx`)
 
 ---
@@ -187,7 +187,7 @@ nodex push \
   -f docker-compose.yml
 ```
 
-Before pulling images, `nodex push` reads the file, logs into each external registry (e.g. `ghcr.io`), pulls pre-built images with authentication, tags them for Nodexa, and pushes them to `nodexa.elzora.tech`.
+Before pulling images, `nodex push` reads the file, logs into each external registry (e.g. `ghcr.io`), pulls pre-built images with authentication, tags them for Nodexa, and pushes them to `nodexcloud.tech`.
 
 ---
 
@@ -216,7 +216,7 @@ You can also set the `NODEXA_PLATFORM` environment variable or specify `platform
    - Or auto-detects from `Dockerfile` in the current repository
    - Or uses explicit CLI flags (`--service`, `--dockerfile`, `--context`)
 3. Reserves a release on nodexa-registry → gets a revision number + image refs
-4. `docker login` to the Nodexa registry (`nodexa.elzora.tech`) with your API token
+4. `docker login` to the Nodexa registry (`nodexcloud.tech`) with your API token
 5. For each service:
    - **Pre-built image**: `docker pull` → `docker tag` → `docker push` → captures digest
    - **Source build**: `docker build` (or `buildx` for multi-platform) → `docker push` → captures digest
@@ -236,7 +236,7 @@ You can also set the `NODEXA_PLATFORM` environment variable or specify `platform
 | `--dockerfile` | — | — | `Dockerfile` | Path to Dockerfile |
 | `--context` | — | — | `.` | Docker build context directory |
 
-> **Registry Target**: The CLI natively targets the Nodexa cloud registry (`nodexa.elzora.tech`). End users do not need to specify registry hosts or URLs.
+> **Registry Target**: The CLI natively targets the Nodexa cloud registry (`nodexcloud.tech`). End users do not need to specify registry hosts or URLs.
 
 ---
 
